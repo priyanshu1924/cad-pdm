@@ -1,0 +1,11 @@
+# SolidWorks temp/lock files
+~$*
+*.swp
+*.bak
+# Fusion / OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+# Local viewer build
+_site/
+__pycache__/

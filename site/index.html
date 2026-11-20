@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parts viewer</title>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6ea; --text: #1d232b; --muted: #66717f;
+    --accent: #2f6fdf; --accent-soft: #e8f0fd; --warn: #b5530b; --warn-soft: #fdf0e6; --err: #b3261e;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --panel: #1b1f26; --line: #2b313a; --text: #e6e9ee; --muted: #8b95a3;
+            --accent: #6d9cf0; --accent-soft: #1f2b40; --warn: #f0a35e; --warn-soft: #3a2a1c; --err: #f2867e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text);
+         display: grid; grid-template-columns: 300px 1fr; height: 100vh; overflow: hidden; }
+  aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 0 10px; letter-spacing: .01em; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  input[type=search] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+                       background: var(--bg); color: var(--text); font: inherit; }
+  #list { overflow-y: auto; flex: 1; padding: 6px 0 12px; }
+  .group { padding: 12px 16px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .item { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; font: inherit;
+          padding: 7px 16px; cursor: pointer; border-left: 3px solid transparent; }
+  .item:hover { background: var(--bg); }
+  .item.active { background: var(--accent-soft); border-left-color: var(--accent); }
+  .item small { display: block; color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  #stage { position: relative; min-height: 0; }
+  model-viewer { width: 100%; height: 100%; background: radial-gradient(circle at 50% 40%, var(--panel), var(--bg)); --poster-color: transparent; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+  #details { border-top: 1px solid var(--line); background: var(--panel); padding: 16px 20px; max-height: 42vh; overflow-y: auto;
+             display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.4fr); gap: 8px 32px; }
+  #details h2 { grid-column: 1 / -1; margin: 0; font-size: 17px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+  .badge.err { color: var(--err); }
+  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 6px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 3px 0; }
+  .hist li { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .hist li:last-child { border-bottom: 0; }
+  .hist .meta { color: var(--muted); font-size: 12px; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+    #details { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <header>
+    <h1>Parts viewer <span id="count"></span></h1>
+    <input id="q" type="search" placeholder="Filter by name, folder or product…" autocomplete="off">
+  </header>
+  <nav id="list"></nav>
+</aside>
+<main>
+  <div id="stage"><div class="empty" id="empty">Loading parts…</div></div>
+  <section id="details" hidden></section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let data = { parts: [] };
+
+const fmtMM = (v) => v.map((x) => x.toFixed(1)).join(" × ") + " mm";
+const fmtBytes = (b) => b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : b >= 1e3 ? (b / 1e3).toFixed(0) + " KB" : b + " bytes";
+const fmtDate = (d) => new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+const ghFile = (path) => data.repo_url ? `${data.repo_url}/blob/${encodeURIComponent(data.branch || "main")}/${path.split("/").map(encodeURIComponent).join("/")}` : null;
+const ghCommit = (sha) => data.repo_url ? `${data.repo_url}/commit/${sha}` : null;
+const link = (href, text, cls = "") => href ? `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>` : `<span class="${cls}">${esc(text)}</span>`;
+
+function renderList() {
+  const q = $("#q").value.trim().toLowerCase();
+  const parts = data.parts.filter((p) =>
+    !q || [p.name, p.folder, ...(p.step?.products || [])].join(" ").toLowerCase().includes(q));
+  $("#count").textContent = `(${parts.length})`;
+  const byFolder = {};
+  // Parts usually sit one per folder, so group by the folder *above* each part's folder.
+  const groupOf = (p) => { const f = (p.folder || "").split("/"); f.pop(); return f.join("/") || "All parts"; };
+  for (const p of parts) (byFolder[groupOf(p)] ||= []).push(p);
+  const current = decodeURIComponent(location.hash.slice(1));
+  $("#list").innerHTML = Object.keys(byFolder).sort().map((f) =>
+    `<div class="group">${esc(f)}</div>` + byFolder[f].map((p) =>
+      `<button class="item ${p.path === current ? "active" : ""}" data-path="${esc(p.path)}">
+         ${esc(p.name)}<small>${p.history?.[0] ? "Last change " + fmtDate(p.history[0].date) : "Not committed yet"}${p.locked_by ? " · locked" : ""}</small>
+       </button>`).join("")).join("") || `<div class="group">No matches</div>`;
+}
+
+function show(path) {
+  const p = data.parts.find((x) => x.path === path);
+  const stage = $("#stage"), det = $("#details");
+  if (!p) { det.hidden = true; return; }
+  stage.innerHTML = p.model
+    ? `<model-viewer src="${esc(p.model)}" camera-controls touch-action="pan-y" shadow-intensity="0.6" exposure="1.05" environment-image="neutral" interaction-prompt="none" alt="${esc(p.name)}"></model-viewer>`
+    : `<div class="empty">No preview for this part${p.error ? ":<br>" + esc(p.error) : "."}</div>`;
+
+  const m = p.mesh, s = p.step || {};
+  const hist = (p.history || []).map((h) =>
+    `<li><span class="mono">${link(ghCommit(h.commit), h.commit.slice(0, 7))}</span>
+         <span>${esc(h.message)}<div class="meta">${esc(h.author)} · ${fmtDate(h.date)}</div></span></li>`).join("");
+  const files = [p.path, ...(p.related_files || [])].map((f) => `<li class="mono">${link(ghFile(f), f)}</li>`).join("");
+
+  det.innerHTML = `
+    <h2>${esc(p.name)}
+      ${p.locked_by ? `<span class="badge">Locked by ${esc(p.locked_by)}</span>` : ""}
+      ${p.error ? `<span class="badge err">Preview problem</span>` : ""}</h2>
+    <div>
+      <h3>Geometry</h3>
+      <dl>
+        ${m ? `<dt>Size</dt><dd class="mono">${fmtMM(m.size_mm)}</dd>` : ""}
+        ${s.products?.length ? `<dt>Products</dt><dd>${esc(s.products.slice(0, 12).join(", "))}${s.products.length > 12 ? ` +${s.products.length - 12} more` : ""}</dd>` : ""}
+        ${s.originating_system ? `<dt>Exported from</dt><dd>${esc(s.originating_system)}</dd>` : ""}
+        ${s.schema ? `<dt>STEP schema</dt><dd class="mono">${esc(s.schema)}</dd>` : ""}
+        ${p.size_bytes ? `<dt>STEP size</dt><dd>${fmtBytes(p.size_bytes)}</dd>` : ""}
+        ${m ? `<dt>Preview</dt><dd>${m.triangles.toLocaleString()} triangles</dd>` : ""}
+      </dl>
+      <h3>Files</h3><ul>${files}</ul>
+    </div>
+    <div><h3>History</h3><ul class="hist">${hist || "<li>No commits yet</li>"}</ul></div>`;
+  det.hidden = false;
+  renderList();
+}
+
+window.addEventListener("hashchange", () => show(decodeURIComponent(location.hash.slice(1))));
+$("#list").addEventListener("click", (e) => {
+  const b = e.target.closest(".item");
+  if (b) location.hash = encodeURIComponent(b.dataset.path);
+});
+$("#q").addEventListener("input", renderList);
+
+fetch("manifest.json").then((r) => r.json()).then((d) => {
+  data = d;
+  renderList();
+  if (!data.parts.length) { $("#empty").textContent = "No STEP files yet. Add some under cad/ and push."; return; }
+  const start = decodeURIComponent(location.hash.slice(1));
+  if (start && data.parts.some((p) => p.path === start)) show(start);
+  else location.hash = encodeURIComponent(data.parts[0].path);
+}).catch(() => { $("#empty").textContent = "Couldn't load manifest.json. If you opened this file directly, serve it instead: python -m http.server -d _site"; });
+</script>
+</body>
+</html>

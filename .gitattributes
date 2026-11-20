@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------------------
+# CAD files live in Git LFS and are "lockable": Git marks them read-only until
+# you run `git lfs lock <file>`, so two people can't edit the same part.
+# Patterns are written case-insensitively because SolidWorks often saves
+# extensions in UPPERCASE (.SLDPRT).
+# ---------------------------------------------------------------------------
+
+# SolidWorks
+*.[sS][lL][dD][pP][rR][tT] filter=lfs diff=lfs merge=lfs -text lockable
+*.[sS][lL][dD][aA][sS][mM] filter=lfs diff=lfs merge=lfs -text lockable
+*.[sS][lL][dD][dD][rR][wW] filter=lfs diff=lfs merge=lfs -text lockable
+
+# Fusion exports
+*.[fF]3[dD] filter=lfs diff=lfs merge=lfs -text lockable
+*.[fF]3[zZ] filter=lfs diff=lfs merge=lfs -text lockable
+
+# Neutral formats (STEP is what the preview pipeline reads)
+*.[sS][tT][eE][pP] filter=lfs diff=lfs merge=lfs -text lockable
+*.[sS][tT][pP]     filter=lfs diff=lfs merge=lfs -text lockable
+*.[iI][gG][eE][sS] filter=lfs diff=lfs merge=lfs -text lockable
+*.[iI][gG][sS]     filter=lfs diff=lfs merge=lfs -text lockable
+*.[xX]_[tT]        filter=lfs diff=lfs merge=lfs -text lockable
+
+# Drawings and other binaries that travel with parts
+cad/**/*.[pP][dD][fF] filter=lfs diff=lfs merge=lfs -text
+cad/**/*.[dD][xX][fF] filter=lfs diff=lfs merge=lfs -text
+cad/**/*.[dD][wW][gG] filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Generated previews are NOT in LFS, so GitHub can render the STL files in its
+# built-in 3D viewer. They are coarse meshes and stay small.
+# ---------------------------------------------------------------------------
+previews/**/*.stl binary
+previews/manifest.json text eol=lf
