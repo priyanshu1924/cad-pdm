@@ -28,12 +28,30 @@ A lightweight PDM built on Git + Git LFS:
    Don't turn this on for proprietary parts unless you're on GitHub Enterprise Cloud
    (which supports private Pages). Instead, view the site locally (see below).
 
+## SolidWorks → STEP
+
+Nothing open-source can read SolidWorks geometry, so STEP exports have to come from
+SolidWorks itself. Three things help with that:
+
+- **Batch exporter** (Windows PC with SolidWorks): double-click
+  `tools/solidworks/export_step.bat`, or run
+  `python tools/solidworks/export_step.py` (needs `pip install pywin32`). It exports a
+  STEP next to every `.SLDPRT`/`.SLDASM` whose STEP is missing or out of date. Use
+  `--dry-run` to preview and `--all` to re-export everything. STEP options (AP214/AP242)
+  come from SolidWorks → Tools → Options → Export.
+- **Commit check**: run `git config core.hooksPath tools/hooks` once per clone. Commits
+  that change a SolidWorks file without its STEP are then stopped
+  (`git commit --no-verify` skips the check).
+- **Flags in the manifest and viewer**: SolidWorks files with no STEP, or with a STEP older
+  than the native file, are listed with a warning so nothing goes missing.
+
 ## Daily workflow
 
 ```bash
 git pull
 git lfs lock cad/PN-1001_base-plate/PN-1001_base-plate.SLDPRT   # claim the file
-# ...edit in SolidWorks, then File → Save As → STEP next to it...
+# ...edit in SolidWorks and save...
+tools/solidworks/export_step.bat                                # or File → Save As → STEP
 git add cad/PN-1001_base-plate/
 git commit -m "PN-1001 rev B: widen mounting slots to 6.5 mm"
 git push
@@ -85,5 +103,7 @@ site/index.html          the viewer page
 scripts/convert.py       STEP → STL + manifest (uses CadQuery)
 scripts/build_site.py    previews → GLB + static site (numpy only)
 scripts/stl_tools.py     STL reader / GLB writer
+tools/solidworks/        batch STEP exporter (Windows + SolidWorks)
+tools/hooks/pre-commit   blocks SolidWorks commits without a STEP
 .github/workflows/previews.yml
 ```

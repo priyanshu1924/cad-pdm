@@ -1,0 +1,34 @@
+#!/bin/sh
+# Stops a commit that changes a SolidWorks part/assembly without its STEP export.
+# Enable once per clone:   git config core.hooksPath tools/hooks
+# Skip for one commit:     git commit --no-verify
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+missing=""
+newline='
+'
+IFS="$newline"
+for f in $staged; do
+  case "$f" in
+    cad/*.[sS][lL][dD][pP][rR][tT]|cad/*.[sS][lL][dD][aA][sS][mM]) ;;
+    *) continue ;;
+  esac
+  stem="${f%.*}"
+  if ! printf '%s\n' "$staged" | grep -qixF -e "$stem.step" -e "$stem.stp"; then
+    missing="$missing  $f$newline"
+  fi
+done
+unset IFS
+
+if [ -n "$missing" ]; then
+  echo "These SolidWorks files are being committed without an updated STEP export:"
+  printf '%s' "$missing"
+  echo
+  echo "Export them (tools/solidworks/export_step.bat, or File > Save As > STEP),"
+  echo "git add the .step files, and commit again."
+  echo "To commit anyway: git commit --no-verify"
+  exit 1
+fi
+exit 0

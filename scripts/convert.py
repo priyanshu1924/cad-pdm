@@ -129,6 +129,22 @@ def history(p: Path) -> list[dict]:
     return hist
 
 
+SW_NATIVE_EXT = {".sldprt", ".sldasm"}
+
+
+def commit_time(p: Path) -> int:
+    out = git("log", "-1", "--format=%ct", "--", rel(p)).strip()
+    return int(out) if out else 0
+
+
+def native_sibling(step: Path) -> Path | None:
+    """The SolidWorks file this STEP was exported from (same folder, same name)."""
+    for f in step.parent.iterdir():
+        if f.is_file() and f.stem == step.stem and f.suffix.lower() in SW_NATIVE_EXT:
+            return f
+    return None
+
+
 def lock_owners() -> dict[str, str]:
     """Path -> who holds its Git LFS lock (one call; empty if offline)."""
     out = git("lfs", "locks", "--json")
@@ -211,6 +227,12 @@ def build(rebuild_all: bool, do_mesh: bool) -> int:
         else:
             entry.pop("preview", None)
 
+        native = native_sibling(s)
+        if native and commit_time(native) > commit_time(s):
+            entry["warning"] = f"STEP is older than {native.name}; re-export it"
+        else:
+            entry.pop("warning", None)
+
         entry["history"] = history(s)
         owner = locks.get(key)
         if owner:
@@ -218,6 +240,26 @@ def build(rebuild_all: bool, do_mesh: bool) -> int:
         else:
             entry.pop("locked_by", None)
         parts.append(entry)
+
+    # SolidWorks files with no STEP export still get listed, flagged.
+    exported = {(st.parent, st.stem) for st in steps}
+    for n in sorted(p for p in CAD.rglob("*") if p.is_file() and p.suffix.lower() in SW_NATIVE_EXT
+                    and not p.name.startswith("~$")):
+        if (n.parent, n.stem) in exported:
+            continue
+        key = rel(n)
+        parts.append({
+            "path": key,
+            "name": n.stem,
+            "folder": n.parent.relative_to(CAD).as_posix(),
+            "native_only": True,
+            "warning": "No STEP export yet; run tools/solidworks/export_step.py",
+            "related_files": [key],
+            "history": history(n),
+            **({"locked_by": locks[key]} if key in locks else {}),
+        })
+        print(f"::warning file={key}::SolidWorks file has no STEP export, so no preview")
+    parts.sort(key=lambda p: p["path"].lower())
 
     # Remove previews whose STEP file was deleted or renamed.
     live = {preview_path(s) for s in steps}

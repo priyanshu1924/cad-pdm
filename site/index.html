@@ -94,7 +94,7 @@ function renderList() {
   $("#list").innerHTML = Object.keys(byFolder).sort().map((f) =>
     `<div class="group">${esc(f)}</div>` + byFolder[f].map((p) =>
       `<button class="item ${p.path === current ? "active" : ""}" data-path="${esc(p.path)}">
-         ${esc(p.name)}<small>${p.history?.[0] ? "Last change " + fmtDate(p.history[0].date) : "Not committed yet"}${p.locked_by ? " · locked" : ""}</small>
+         ${esc(p.name)}<small>${p.history?.[0] ? "Last change " + fmtDate(p.history[0].date) : "Not committed yet"}${p.locked_by ? " · locked" : ""}${p.warning ? " · needs STEP" : ""}</small>
        </button>`).join("")).join("") || `<div class="group">No matches</div>`;
 }
 
@@ -104,7 +104,7 @@ function show(path) {
   if (!p) { det.hidden = true; return; }
   stage.innerHTML = p.model
     ? `<model-viewer src="${esc(p.model)}" camera-controls touch-action="pan-y" shadow-intensity="0.6" exposure="1.05" environment-image="neutral" interaction-prompt="none" alt="${esc(p.name)}"></model-viewer>`
-    : `<div class="empty">No preview for this part${p.error ? ":<br>" + esc(p.error) : "."}</div>`;
+    : `<div class="empty">No preview for this part${p.error ? ":<br>" + esc(p.error) : p.native_only ? ":<br>it has no STEP export yet." : "."}</div>`;
 
   const m = p.mesh, s = p.step || {};
   const hist = (p.history || []).map((h) =>
@@ -115,7 +115,8 @@ function show(path) {
   det.innerHTML = `
     <h2>${esc(p.name)}
       ${p.locked_by ? `<span class="badge">Locked by ${esc(p.locked_by)}</span>` : ""}
-      ${p.error ? `<span class="badge err">Preview problem</span>` : ""}</h2>
+      ${p.error ? `<span class="badge err">Preview problem</span>` : ""}
+      ${p.warning ? `<span class="badge">${esc(p.warning)}</span>` : ""}</h2>
     <div>
       <h3>Geometry</h3>
       <dl>
